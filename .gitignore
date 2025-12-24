@@ -1,0 +1,6 @@
+hpc_mcp.egg-info
+build
+dist
+env
+.eggs
+__pycache__

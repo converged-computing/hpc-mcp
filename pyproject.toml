@@ -1,0 +1,7 @@
+[tool.black]
+exclude = "^env/"
+line-length = 100
+
+[tool.isort]
+profile = "black" # needed for black/isort compatibility
+line_length = 100
