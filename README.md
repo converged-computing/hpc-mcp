@@ -4,13 +4,13 @@
 
 [![PyPI version](https://badge.fury.io/py/hpc-mcp.svg)](https://badge.fury.io/py/hpc-mcp)
 
-![img/hpc-mcp.png](img/hpc-mcp.png)
+![img/hpc-mcp.png](https://github.com/converged-computing/hpc-mpc/blob/main/img/hpc-mcp-small.png?raw=true)
 
 ## Related Projects
 
  - [flux-mcp](https://github.com/converged-computing/flux-mcp): MCP functions for Flux Framework.
  - [fractale-mcp](https://github.com/compspec/fractale-mcp): (fractale) MCP orchestration (agents, databases, ui interfaces).
- 
+
 ## Usage
 
 This is a library of MCP tools (functions, prompts, and resources) intended for converged computing and HPC use cases. A demo server is provided here, and largely functions are expected to be used a-la-carte as imports to other libraries. We welcome contributions of all functions types that are related to HPC, converged computing, and science. These MCP tools can be used via a standalone server, or combined with other tools.
