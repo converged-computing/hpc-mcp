@@ -91,15 +91,19 @@ class Result:
         logfunc(result)
         return result
 
+    def to_dict(self) -> str:
+        """
+        Returns dictionary
+        """
+        return {
+            "returncode": self.returncode,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "metadata": self.metadata,
+        }
+
     def to_json(self) -> str:
         """
         Returns raw JSON for machine-readable only.
         """
-        return json.dumps(
-            {
-                "returncode": self.returncode,
-                "stdout": self.stdout,
-                "stderr": self.stderr,
-                "metadata": self.metadata,
-            }
-        )
+        return json.dumps(self.to_dict())

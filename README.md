@@ -64,6 +64,16 @@ pytest -xs tests/test_*.py
 
 - Add annotated descriptions to all functions for LLM.
 
+### Tools to add:
+
+ - helpers
+   - debug
+   - result parser (regular expressions)
+   - timer (agent can request to wait some N time)
+ - kubernetes
+   - deploy job
+   - deploy minicluster
+
 ## License
 
 DevTools is distributed under the terms of the MIT license.
