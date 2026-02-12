@@ -76,7 +76,7 @@ def docker_push_container(uri: str, all_tags: bool = False, as_json: bool = True
 
 
 def docker_build_container(
-    dockerfile: list[str], uri: str = "lammps", platforms: str = None, as_json: bool = True
+    dockerfile: list[str], uri: str = "lammps", platforms: str = None, as_dict: bool = True
 ):
     """
     Build a docker container. Accepts an optional unique resource identifier (URI).
@@ -130,8 +130,8 @@ def docker_build_container(
     # Streamline (filter) output and return result object
     p.stdout = filter_output(p.stdout)
     p.stderr = filter_output(p.stderr)
-    if as_json:
-        return Result(p).to_json()
+    if as_dict:
+        return Result(p).to_dict()
     return Result(p).render()
 
 
@@ -152,12 +152,13 @@ def filter_output(output):
     ]
     output = output or ""
     regex = "(%s)" % "|".join(skips)
-    output = "\n".join([x for x in output.split("\n") if not re.search(regex, x)])
+    output = [x for x in output.split("\n") if not re.search(regex, x)]
+    output = "\n".join([x for x in output if x.strip() not in ["\n", ""]])
     # Try to match lines that start with #<number>
     return "\n".join([x for x in output.split("\n") if not re.search(r"^#(\d)+ ", x)])
 
 
-def kind_load(uri: str, load_type: str = "docker-image", as_json: bool = True):
+def kind_load(uri: str, load_type: str = "docker-image", as_dict: bool = True):
     """
     Load a Docker URI into Kind (Kubernetes in Docker)
 
@@ -174,8 +175,8 @@ def kind_load(uri: str, load_type: str = "docker-image", as_json: bool = True):
         text=True,
         check=False,
     )
-    if as_json:
-        return Result(p).to_json()
+    if as_dict:
+        return Result(p).to_dict()
     return Result(p).render()
 
 
