@@ -1,4 +1,4 @@
-__version__ = "0.0.1"
+__version__ = "0.0.12"
 AUTHOR = "Vanessa Sochat"
 AUTHOR_EMAIL = "vsoch@users.noreply.github.com"
 NAME = "hpc-mcp"
@@ -21,8 +21,10 @@ INSTALL_REQUIRES = (
     ("ply", {"min_version": None}),
 )
 
+DATABASE_REQUIRES = (("sqlalchemy", {"min_version": None}),)
+
 TESTS_REQUIRES = (
     ("pytest", {"min_version": "4.6.2"}),
     ("pytest-asyncio", {"min_version": None}),
 )
-INSTALL_REQUIRES_ALL = INSTALL_REQUIRES + TESTS_REQUIRES
+INSTALL_REQUIRES_ALL = INSTALL_REQUIRES + TESTS_REQUIRES + DATABASE_REQUIRES
