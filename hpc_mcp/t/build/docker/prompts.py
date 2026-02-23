@@ -1,4 +1,4 @@
-from hpc_mcp.prompts import format_rules
+from hpc_mcp.utils import format_rules
 
 PERSONA = "You are a Dockerfile build expert."
 
