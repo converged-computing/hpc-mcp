@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastmcp.tools.tool import Tool
 
-from hpc_mcp.t.registry import TOOLS
+from hpc_mcp.registry import TOOLS
 
 from .app import init_mcp
 

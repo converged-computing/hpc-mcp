@@ -9,7 +9,7 @@
 ## Related Projects
 
  - [flux-mcp](https://github.com/converged-computing/flux-mcp): MCP functions for Flux Framework.
- - [fractale-mcp](https://github.com/compspec/fractale-mcp): (fractale) MCP orchestration (agents, databases, ui interfaces).
+ - [fractale](https://github.com/converged-computing/fractale): (fractale) MCP orchestration (agents, databases, ui interfaces).
 
 ## Usage
 
@@ -69,7 +69,6 @@ pytest -xs tests/test_*.py
  - helpers
    - debug
    - result parser (regular expressions)
-   - timer (agent can request to wait some N time)
  - kubernetes
    - deploy job
    - deploy minicluster

@@ -1,9 +1,9 @@
-import hpc_mcp.t.build.docker as docker
-import hpc_mcp.t.utils as utils
+import hpc_mcp.build.docker as docker
+import hpc_mcp.timer as timer
 
 TOOLS = [
     # utilities
-    utils.sleep_timer,
+    timer.sleep_timer,
     # docker build tools
     docker.docker_run_container,
     docker.docker_push_container,
