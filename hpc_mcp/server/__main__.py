@@ -1,6 +1,6 @@
 from mcp.server.fastmcp import FastMCP
 
-from hpc_mcp.t.registry import TOOLS
+from hpc_mcp.registry import TOOLS
 
 
 def register_with(server_instance):
