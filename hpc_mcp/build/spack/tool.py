@@ -6,6 +6,7 @@ import shutil
 import logging
 from typing import Annotated, Any, Dict, List, Optional, Union
 from hpc_mcp.logger import logger
+from pathlib import Path
 
 # Don't cache 'find' or 'spec' as these change with the system state.
 SPACK_CACHE = {"list": None, "info": {}}
@@ -20,6 +21,80 @@ SpackActionResponse = Annotated[
     Dict[str, Any],
     "A response from an execution command containing 'success' (bool), 'output' (str), and 'exit_code' (int).",
 ]
+
+SpackLocationResult = Annotated[
+    Dict[str, Any],
+    "A dictionary containing 'success' (bool), a 'data' object with absolute paths to Spack directories, "
+    "and an 'error' string if Spack cannot be located.",
+]
+
+
+def which_spack() -> SpackLocationResult:
+    """
+    Identifies the active Spack installation and returns absolute paths to its core directories.
+
+    This tool is critical for agents needing to:
+    1. Source the Spack environment (via share/spack/setup-env.sh).
+    2. Inspect system-level configuration (in etc/spack).
+    3. Locate package repositories or metadata (in var/spack).
+    4. Verify where software is installed (in opt/spack).
+
+    Returns:
+        A dictionary containing:
+            - 'success' (bool): True if the Spack root and directories were identified.
+            - 'data' (dict): A mapping of directory labels to absolute paths:
+                - 'root': The base directory of the Spack installation.
+                - 'bin': The directory containing the spack executable.
+                - 'share': Contains setup scripts and shells support (setup-env.sh).
+                - 'etc': Contains site-scope configuration files.
+                - 'var': Contains the main package repository and internal metadata.
+                - 'opt': The default installation prefix for built software.
+            - 'error' (str|None): A descriptive error message if Spack discovery fails.
+    """
+    try:
+        # 1. Use the existing helper to find the binary
+        bin_path_str = get_spack_bin()
+        bin_path = Path(bin_path_str).resolve()
+
+        # 2. Derive the Root
+        # Typically: /path/to/spack/bin/spack -> Root is /path/to/spack
+        # We handle cases where it might be a symlink by using .resolve() above
+        spack_root = bin_path.parent.parent
+
+        # 3. Construct standard subdirectory map
+        paths = {
+            "root": str(spack_root),
+            "bin": str(spack_root / "bin"),
+            "share": str(spack_root / "share" / "spack"),
+            "etc": str(spack_root / "etc" / "spack"),
+            "var": str(spack_root / "var" / "spack"),
+            "opt": str(spack_root / "opt" / "spack"),
+        }
+
+        # 4. Verify existence to provide the agent with a 'grounded' view
+        verification = {k: os.path.exists(v) for k, v in paths.items()}
+
+        if not verification["root"]:
+            return {
+                "success": False,
+                "data": {},
+                "error": f"Calculated SPACK_ROOT '{spack_root}' does not exist on disk.",
+            }
+
+        return {
+            "success": True,
+            "data": {"paths": paths, "verification": verification, "spack_bin": bin_path_str},
+            "error": None,
+        }
+
+    except FileNotFoundError as e:
+        return {"success": False, "data": {}, "error": str(e)}
+    except Exception as e:
+        return {
+            "success": False,
+            "data": {},
+            "error": f"Unexpected error during Spack path discovery: {str(e)}",
+        }
 
 
 def get_spack_bin() -> str:
