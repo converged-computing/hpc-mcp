@@ -25,7 +25,7 @@ def transform_jobspec_expert(
 
     if error is not None:
         goal = f"You previously attempted to convert a job specification and it did not validate. Analyze the error and fix it: Error: {error}"
-    if jobpsec is not None:
+    if jobspec is not None:
         goal += f"Previous Attempt: \n{jobspec}"
 
     return f"""### PERSONA
