@@ -21,8 +21,14 @@ FileWriteResult = Annotated[
     "and a descriptive 'message' or 'error'.",
 ]
 
+FileSystemFindResult = Annotated[
+    Dict[str, Any],
+    "A dictionary containing 'success' (bool), a list of 'matches' (absolute path strings), "
+    "and optional 'error' or 'message' strings.",
+]
 
-def list_directory(
+
+def filesystem_list_directory(
     path: Annotated[
         Optional[str], "The directory path to list. Defaults to the current working directory."
     ] = None,
@@ -70,7 +76,7 @@ def list_directory(
         return {"success": False, "error": f"Error listing directory: {str(e)}"}
 
 
-def read_file(
+def filesystem_read_file(
     path: Annotated[str, "The relative or absolute path to the file to be read."],
 ) -> FileReadResult:
     """
@@ -111,7 +117,7 @@ def read_file(
         return {"success": False, "content": None, "error": f"Error reading file: {str(e)}"}
 
 
-def write_file(
+def filesystem_write_file(
     path: Annotated[str, "The target path where the file will be created or overwritten."],
     content: Annotated[str, "The text content to be written to the file."],
 ) -> FileWriteResult:
@@ -152,3 +158,102 @@ def write_file(
 
     except Exception as e:
         return {"success": False, "error": f"Error writing file: {str(e)}"}
+
+
+def filesystem_find_file(
+    name: Annotated[str, "The exact name of the file to search for (e.g., 'config.yaml')."],
+    root: Annotated[
+        Optional[str], "The directory to start the search from. Defaults to the current directory."
+    ] = ".",
+    limit: Annotated[int, "The maximum number of matches to return."] = 10,
+) -> FileSystemFindResult:
+    """
+    Recursively searches for a file by name starting from a specified root directory.
+
+    Args:
+        name: The filename to search for. Must not contain path separators.
+        root: The starting point for the recursive search.
+        limit: Caps the number of results to prevent excessive output.
+
+    Returns:
+        A dictionary containing:
+            - 'success' (bool): True if the search completed without error.
+            - 'matches' (list[str]): A list of absolute paths to found files.
+            - 'error' (str, optional): Error message if root is invalid or search failed.
+    """
+    # Security: Ensure name is just a filename, not a path
+    if os.path.basename(name) != name:
+        return {"success": False, "error": "The 'name' argument must be a filename, not a path."}
+
+    try:
+        search_root = Path(root or ".").resolve()
+        if not search_root.exists() or not search_root.is_dir():
+            return {"success": False, "error": f"Search root '{root}' is not a valid directory."}
+
+        # Recursive search using glob
+        matches = []
+        for p in search_root.rglob(name):
+            if p.is_file():
+                matches.append(str(p))
+            if len(matches) >= limit:
+                break
+
+        return {
+            "success": True,
+            "matches": matches,
+            "message": (
+                f"Found {len(matches)} match(es) for '{name}'." if matches else "No matches found."
+            ),
+        }
+    except Exception as e:
+        return {"success": False, "error": f"Error searching for file: {str(e)}"}
+
+
+def filesystem_find_directory(
+    name: Annotated[str, "The exact name of the directory to search for (e.g., 'src')."],
+    root: Annotated[
+        Optional[str], "The directory to start the search from. Defaults to the current directory."
+    ] = ".",
+    limit: Annotated[int, "The maximum number of matches to return."] = 10,
+) -> FileSystemFindResult:
+    """
+    Recursively searches for a directory by name starting from a specified root directory.
+
+    Args:
+        name: The directory name to search for. Must not contain path separators.
+        root: The starting point for the recursive search.
+        limit: Caps the number of results to prevent excessive output.
+
+    Returns:
+        A dictionary containing:
+            - 'success' (bool): True if the search completed without error.
+            - 'matches' (list[str]): A list of absolute paths to found directories.
+            - 'error' (str, optional): Error message if root is invalid or search failed.
+    """
+    # Security: Ensure name is just a name, not a path
+    if os.path.basename(name) != name:
+        return {"success": False, "error": "The 'name' argument must be a name, not a path."}
+
+    try:
+        search_root = Path(root or ".").resolve()
+        if not search_root.exists() or not search_root.is_dir():
+            return {"success": False, "error": f"Search root '{root}' is not a valid directory."}
+
+        matches = []
+        for p in search_root.rglob(name):
+            if p.is_dir():
+                matches.append(str(p))
+            if len(matches) >= limit:
+                break
+
+        return {
+            "success": True,
+            "matches": matches,
+            "message": (
+                f"Found {len(matches)} match(es) for directory '{name}'."
+                if matches
+                else "No matches found."
+            ),
+        }
+    except Exception as e:
+        return {"success": False, "error": f"Error searching for directory: {str(e)}"}
