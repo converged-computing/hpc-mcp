@@ -7,7 +7,7 @@ from typing import Annotated, Any, Dict, List, Optional, Union
 GitOperationResult = Annotated[
     Dict[str, Any],
     "A dictionary containing 'success' (bool), the raw 'output' string from git, "
-    "and an 'error' string if the operation failed.",
+    "and an 'error' string if the operation failed. If relevant, a 'path' is also returned",
 ]
 
 
@@ -121,6 +121,7 @@ def git_clone(
     url: Annotated[str, "The URL of the remote repository to clone."],
     path: Annotated[str, "The local directory path where the repo should be cloned."],
     branch: Annotated[Optional[str], "Optional branch name to clone."] = None,
+    depth: Annotated[Optional[int], "Optional depth to clone."] = None,
 ) -> GitOperationResult:
     """
     Clones a repository into a new directory.
@@ -129,14 +130,17 @@ def git_clone(
         url: The git URL (HTTPS or SSH).
         path: The target local directory.
         branch: Specific branch to check out.
+        depth: Optional depth to clone. Use 1 if do not need history.
     """
     try:
         git_bin = check_git()
         # Resolve parent directory to ensure we can write there
         target_path = Path(path).resolve()
         target_path.parent.mkdir(parents=True, exist_ok=True)
-
-        args = ["clone", url, str(target_path)]
+        args = ["clone"]
+        if depth is not None:
+            args += ["--depth", str(depth)]
+        args += [url, str(target_path)]
         if branch:
             args += ["-b", branch]
 
@@ -146,9 +150,28 @@ def git_clone(
             "success": result.returncode == 0,
             "output": result.stdout.strip(),
             "error": result.stderr.strip(),
+            "path": path,
         }
     except Exception as e:
         return {"success": False, "output": "", "error": str(e)}
+
+
+def git_clone_tmp(
+    url: Annotated[str, "The URL of the remote repository to clone."],
+    branch: Annotated[Optional[str], "Optional branch name to clone."] = None,
+    depth: Annotated[Optional[int], "Optional depth to clone."] = None,
+) -> GitOperationResult:
+    """
+    Clones a repository into a new temporary directory. This is safer than allowing
+    a clone anywhere.
+
+    Args:
+        url: The git URL (HTTPS or SSH).
+        branch: Specific branch to check out.
+        depth: Optional depth to clone. Use 1 if do not need history.
+    """
+    path = utils.get_tmpdir()
+    return git_clone(url, path, branch)
 
 
 def git_init(
