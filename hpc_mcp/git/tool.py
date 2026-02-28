@@ -123,7 +123,7 @@ def git_clone(
     url: Annotated[str, "The URL of the remote repository to clone."],
     path: Annotated[str, "The local directory path where the repo should be cloned."],
     branch: Annotated[Optional[str], "Optional branch name to clone."] = None,
-    depth: Annotated[Optional[int], "Optional depth to clone."] = None,
+    depth: Annotated[Optional[int], "Optional depth to clone."] = 1,
 ) -> GitOperationResult:
     """
     Clones a repository into a new directory.
@@ -132,7 +132,7 @@ def git_clone(
         url: The git URL (HTTPS or SSH).
         path: The target local directory.
         branch: Specific branch to check out.
-        depth: Optional depth to clone. Use 1 if do not need history.
+        depth: Optional depth to clone. Defaults to 1.
     """
     try:
         git_bin = check_git()
@@ -161,7 +161,7 @@ def git_clone(
 def git_clone_tmp(
     url: Annotated[str, "The URL of the remote repository to clone."],
     branch: Annotated[Optional[str], "Optional branch name to clone."] = None,
-    depth: Annotated[Optional[int], "Optional depth to clone."] = None,
+    depth: Annotated[Optional[int], "Optional depth to clone."] = 1,
 ) -> GitOperationResult:
     """
     Clones a repository into a new temporary directory. This is safer than allowing
@@ -170,7 +170,7 @@ def git_clone_tmp(
     Args:
         url: The git URL (HTTPS or SSH).
         branch: Specific branch to check out.
-        depth: Optional depth to clone. Use 1 if do not need history.
+        depth: Optional depth to clone. Defaults to 1.
     """
     path = utils.get_tmpdir()
     return git_clone(url, path, branch)
