@@ -4,6 +4,8 @@ import subprocess
 from pathlib import Path
 from typing import Annotated, Any, Dict, List, Optional, Union
 
+import hpc_mcp.utils as utils
+
 GitOperationResult = Annotated[
     Dict[str, Any],
     "A dictionary containing 'success' (bool), the raw 'output' string from git, "
