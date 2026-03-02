@@ -49,6 +49,7 @@ def kubectl_get(
     resource_type: Annotated[
         str, "The type of resource to get (e.g., 'pods', 'nodes', 'services', 'deployments')."
     ],
+    name: Annotated[Optional[str], "The name of the object to get."] = None,
     namespace: Annotated[
         Optional[str], "The namespace scope. If None, uses default. Use 'all' for all namespaces."
     ] = None,
@@ -59,6 +60,7 @@ def kubectl_get(
 
     Args:
         resource_type: The Kubernetes resource category.
+        name: The name of the object to get.
         namespace: The namespace to query. 'all' triggers --all-namespaces.
         label_selector: Optional k8s label query string.
 
@@ -74,6 +76,9 @@ def kubectl_get(
 
     if label_selector:
         args.extend(["-l", label_selector])
+
+    if name:
+        args.append(name)
 
     try:
         result = run_kubectl(args, json_output=True)
