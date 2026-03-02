@@ -201,6 +201,19 @@ def kubectl_delete(
     }
 
 
+def kubectl_crds() -> KubeActionResponse:
+    """
+    kubectl get crds
+    """
+    args = ["get", "crds", "--json"]
+    result = run_kubectl(args)
+    return {
+        "success": result.returncode == 0,
+        "output": result.stdout.strip() if result.returncode == 0 else result.stderr.strip(),
+        "exit_code": result.returncode,
+    }
+
+
 def kubectl_get_events(
     namespace: Annotated[
         Optional[str], "Namespace to fetch events for. 'all' for all namespaces."

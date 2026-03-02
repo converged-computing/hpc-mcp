@@ -2,6 +2,7 @@ from .tool import (
     kubectl_api_resources,
     kubectl_api_versions,
     kubectl_apply,
+    kubectl_crds,
     kubectl_delete,
     kubectl_describe,
     kubectl_exec,
