@@ -176,6 +176,33 @@ def kubectl_apply(
             os.remove(temp_path)
 
 
+def kubectl_apply_file(
+    path: Annotated[str, "A local or URL reference to a Kubernetes manifest to apply."],
+) -> KubeActionResponse:
+    """
+    Applies a local or remote file (manifest) to the cluster (equivalent to kubectl apply -f).
+
+    Args:
+        path: The local or URL path to apply.
+
+    Returns:
+        The result of the apply operation, including success status and CLI output.
+    """
+    try:
+        result = run_kubectl(["apply", "-f", path])
+        return {
+            "success": result.returncode == 0,
+            "output": result.stdout.strip() if result.returncode == 0 else result.stderr.strip(),
+            "exit_code": result.returncode,
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "output": f"Error applying manifest: {e}",
+            "exit_code": -1,
+        }
+
+
 def kubectl_delete(
     resource_type: Annotated[str, "Type of resource (e.g., 'pod')."],
     name: Annotated[str, "Name of the resource to delete."],
@@ -205,7 +232,7 @@ def kubectl_crds() -> KubeActionResponse:
     """
     kubectl get crds
     """
-    args = ["get", "crds", "--json"]
+    args = ["get", "crds", "-o", "json"]
     result = run_kubectl(args)
     return {
         "success": result.returncode == 0,
