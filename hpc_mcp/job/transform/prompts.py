@@ -23,9 +23,9 @@ def transform_jobspec_expert(
     goal = f"I need to convert the provided job specification from '{from_manager}' to '{to_manager}'. "
     goal += f"The desired output format is a '{fmt}' script."
 
-    if error is not None:
+    if error:
         goal = f"You previously attempted to convert a job specification and it did not validate. Analyze the error and fix it: Error: {error}"
-    if jobspec is not None:
+    if jobspec:
         goal += f"Previous Attempt: \n{jobspec}"
 
     return f"""### PERSONA
