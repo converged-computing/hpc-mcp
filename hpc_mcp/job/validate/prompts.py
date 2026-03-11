@@ -9,14 +9,14 @@ You are a job validation expert.
 We need to validate a job specification for correctness.
 
 ### GOAL
-I need to validate if the following job specification is correct:
+I need to validate if the following job specification is correct. Validity means that the job specification will be accepted by the workload manager and execute:
 
 ```
 %s
 ```
 
 ### REQUIREMENTS & CONSTRAINTS
-You MUST return a JSON structure with fields for 'valid' (bool) and a list of string 'reasons'. You MAY optionally add a field `issues` with a list of debugging or critique of any code.
+You MUST return a JSON structure with fields for 'valid' (bool) and a list of string 'reasons'. You MAY optionally add a field `issues` with a list of debugging or critique of any code. You MUST assume that defaults for a workload manager are reasonable to translate.
 
 ### INSTRUCTIONS
 1. Analyze the provided script above.

@@ -1,4 +1,4 @@
-__version__ = "0.0.18"
+__version__ = "0.0.19"
 AUTHOR = "Vanessa Sochat"
 AUTHOR_EMAIL = "vsoch@users.noreply.github.com"
 NAME = "hpc-mcp"
