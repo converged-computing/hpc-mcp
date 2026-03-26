@@ -6,77 +6,125 @@ import subprocess
 import tempfile
 from typing import Annotated, Any, Dict, List, Optional, Union
 
-AutoscalerConfigResult = Annotated[
-    Dict[str, Any],
-    "A structured report containing the discovered autoscaler type, "
-    "the raw configuration data, and a list of potential instance types if found.",
-]
 
+def _summarize_resource_data(
+    items: List[Dict[str, Any]], resource_type: str
+) -> List[Dict[str, Any]]:
+    """
+    Internal helper to strip 90% of Kubernetes metadata (managedFields, ownerReferences,
+    finalizers, etc.) to keep token counts low for the LLM.
+    """
+    summary = []
+    r_type = resource_type.lower()
 
-KubeResult = Annotated[
-    Dict[str, Any],
-    "A structured result containing 'success' (bool), 'data' (parsed JSON or string), "
-    "and 'error' (str or None) if the command failed.",
-]
+    for item in items:
+        meta = item.get("metadata", {})
+        status = item.get("status", {})
+        spec = item.get("spec", {})
 
-KubeActionResponse = Annotated[
-    Dict[str, Any],
-    "A response from a state-changing command (apply/delete) containing 'success' (bool), "
-    "the raw 'output' string, and 'exit_code' (int).",
-]
+        base = {
+            "name": meta.get("name"),
+            "namespace": meta.get("namespace"),
+            "creationTimestamp": meta.get("creationTimestamp"),
+        }
+
+        if "pod" in r_type:
+            container_statuses = status.get("containerStatuses", [{}])
+            base.update(
+                {
+                    "phase": status.get("phase"),
+                    "podIP": status.get("podIP"),
+                    "node": spec.get("nodeName"),
+                    "restarts": sum(c.get("restartCount", 0) for c in container_statuses),
+                    "containers": [c.get("name") for c in spec.get("containers", [])],
+                }
+            )
+        elif "node" in r_type:
+            conds = status.get("conditions", [])
+            ready = next((c.get("status") for c in conds if c.get("type") == "Ready"), "Unknown")
+            base.update(
+                {
+                    "ready": ready,
+                    "instance_type": meta.get("labels", {}).get("node.kubernetes.io/instance-type"),
+                    "cpu": status.get("capacity", {}).get("cpu"),
+                    "memory": status.get("capacity", {}).get("memory"),
+                }
+            )
+        elif "deployment" in r_type or "replicaset" in r_type or "statefulset" in r_type:
+            base.update(
+                {
+                    "replicas_desired": spec.get("replicas"),
+                    "replicas_ready": status.get("readyReplicas", 0),
+                    "replicas_updated": status.get("updatedReplicas", 0),
+                }
+            )
+        elif "service" in r_type:
+            base.update(
+                {
+                    "type": spec.get("type"),
+                    "clusterIP": spec.get("clusterIP"),
+                    "externalIP": status.get("loadBalancer", {}).get("ingress", [{}])[0].get("ip"),
+                    "ports": spec.get("ports"),
+                }
+            )
+        elif "event" in r_type:
+            base = {
+                "lastTimestamp": item.get("lastTimestamp"),
+                "type": item.get("type"),
+                "reason": item.get("reason"),
+                "object": item.get("involvedObject", {}).get("name"),
+                "message": item.get("message"),
+            }
+        else:
+            # Generic fallback for less common types
+            base["status"] = status.get("phase") or "N/A"
+
+        summary.append(base)
+    return summary
 
 
 def run_kubectl(args: List[str], json_output: bool = False) -> subprocess.CompletedProcess:
-    """
-    Executes a kubectl command safely using subprocess.
-
-    Args:
-        args: List of command arguments.
-        json_output: If True, appends '-o json' to the command.
-    """
+    """Executes a kubectl command safely using subprocess."""
     kubectl_bin = shutil.which("kubectl")
     if not kubectl_bin:
         raise FileNotFoundError("kubectl executable not found on system path.")
-
     cmd = [kubectl_bin] + args
     if json_output:
         cmd.extend(["-o", "json"])
-
     return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
 
 def kubectl_get(
-    resource_type: Annotated[
-        str, "The type of resource to get (e.g., 'pods', 'nodes', 'services', 'deployments')."
-    ],
-    name: Annotated[Optional[str], "The name of the object to get."] = None,
-    namespace: Annotated[
-        Optional[str], "The namespace scope. If None, uses default. Use 'all' for all namespaces."
-    ] = None,
-    label_selector: Annotated[Optional[str], "Filter results by label (e.g., 'app=nginx')."] = None,
+    resource_type: Annotated[str, "The type of resource (e.g., 'pods', 'nodes', 'deployments')."],
+    name: Annotated[Optional[str], "Specific name of the resource instance."] = None,
+    namespace: Annotated[Optional[str], "Namespace scope. Use 'all' for all namespaces."] = None,
+    label_selector: Annotated[Optional[str], "Filter by labels (e.g., 'app=nginx')."] = None,
+    verbose: Annotated[
+        bool, "If True, returns the full raw JSON. If False, returns a summarized version."
+    ] = False,
 ) -> KubeResult:
     """
-    Retrieves a list of Kubernetes resources in JSON format.
+    Retrieves information about Kubernetes resources.
 
     Args:
         resource_type: The Kubernetes resource category.
-        name: The name of the object to get.
-        namespace: The namespace to query. 'all' triggers --all-namespaces.
-        label_selector: Optional k8s label query string.
+        name: Optional name of a specific resource.
+        namespace: The namespace to query. Defaults to current context.
+        label_selector: Kubernetes label query string.
+        verbose: Toggle between a token-efficient summary and full resource data.
 
-    Returns:
-        A dictionary containing the 'success' flag and a 'data' list of resource objects.
+    Guidance for LLM Agent:
+        - ALWAYS start with verbose=False. This provides the 'vital signs' of a resource.
+        - Only switch to verbose=True if you need to see deep spec details, like environment variables,
+          volume mounts, or exact affinity rules that are not in the summary.
     """
     args = ["get", resource_type]
-
     if namespace == "all":
         args.append("--all-namespaces")
     elif namespace:
         args.extend(["-n", namespace])
-
     if label_selector:
         args.extend(["-l", label_selector])
-
     if name:
         args.append(name)
 
@@ -86,28 +134,39 @@ def kubectl_get(
             return {"success": False, "data": [], "error": result.stderr.strip()}
 
         data = json.loads(result.stdout)
-        # Kubernetes returns a 'List' kind; we extract the 'items'
-        items = data.get("items", [])
-        return {"success": True, "data": items, "error": None}
+        items = data.get("items", []) if "items" in data else [data]
+
+        if not verbose:
+            data = _summarize_resource_data(items, resource_type)
+        else:
+            data = items
+
+        return {"success": True, "data": data, "error": None}
     except Exception as e:
         return {"success": False, "data": [], "error": str(e)}
 
 
 def kubectl_describe(
     resource_type: Annotated[str, "Resource type (e.g., 'pod')."],
-    name: Annotated[str, "The name of the specific resource."],
-    namespace: Annotated[Optional[str], "The namespace of the resource."] = None,
+    name: Annotated[str, "Name of the resource."],
+    namespace: Annotated[Optional[str], "Namespace of the resource."] = None,
+    verbose: Annotated[
+        bool, "If False, returns only the first 50 lines (usually enough for errors)."
+    ] = False,
 ) -> KubeResult:
     """
-    Retrieves a detailed, human-readable description of a specific resource.
+    Provides a human-readable, detailed description of a resource.
 
     Args:
         resource_type: Resource category.
-        name: Name of the resource instance.
+        name: Name of the instance.
         namespace: Target namespace.
+        verbose: Whether to return the full description or a truncated version.
 
-    Returns:
-        A dictionary containing the descriptive text in the 'data' field.
+    Guidance for LLM Agent:
+        - Use this tool when you see a resource in a 'Pending' or 'Failed' state from 'kubectl_get'.
+        - 'describe' is better for seeing event history and 'Reason' codes for failures.
+        - Use verbose=True if the error message in the first 50 lines is cut off.
     """
     args = ["describe", resource_type, name]
     if namespace:
@@ -117,30 +176,45 @@ def kubectl_describe(
     if result.returncode != 0:
         return {"success": False, "data": "", "error": result.stderr.strip()}
 
-    return {"success": True, "data": result.stdout.strip(), "error": None}
+    output = result.stdout.strip()
+    if not verbose:
+        lines = output.splitlines()
+        if len(lines) > 50:
+            output = (
+                "\n".join(lines[:50])
+                + "\n... [Output Truncated. Use verbose=True for full text] ..."
+            )
+
+    return {"success": True, "data": output, "error": None}
 
 
 def kubectl_logs(
-    pod_name: Annotated[str, "The name of the pod to fetch logs from."],
-    namespace: Annotated[Optional[str], "The namespace of the pod."] = None,
-    container: Annotated[
-        Optional[str], "Specific container name if the pod is multi-container."
-    ] = None,
-    tail: Annotated[int, "Number of lines from the end of the logs to show."] = 100,
+    pod_name: Annotated[str, "Name of the pod."],
+    namespace: Annotated[Optional[str], "Namespace of the pod."] = None,
+    container: Annotated[Optional[str], "Container name for multi-container pods."] = None,
+    tail: Annotated[int, "Lines from the end of the logs."] = 100,
+    verbose: Annotated[
+        bool, "If True, ignores the 'tail' limit and returns more context (max 1000 lines)."
+    ] = False,
 ) -> KubeResult:
     """
-    Fetches the logs from a specific pod or container.
+    Fetches the logs for a specific pod or container.
 
     Args:
-        pod_name: Target pod.
-        namespace: Pod namespace.
-        container: Target container within the pod.
-        tail: Limit output to the most recent N lines.
+        pod_name: Target pod name.
+        namespace: Namespace scope.
+        container: Specific container.
+        tail: Number of lines to fetch.
+        verbose: Set to True to fetch a larger window of logs (1000 lines).
 
-    Returns:
-        A dictionary containing the log text.
+    Guidance for LLM Agent:
+        - Use this to diagnose application-level crashes or errors.
+        - Start with the default tail=100.
+        - Only use verbose=True or a high tail count if you are searching for a specific stack trace
+          that occurred further back in time.
     """
-    args = ["logs", pod_name, f"--tail={tail}"]
+    line_count = 1000 if verbose else tail
+    args = ["logs", pod_name, f"--tail={line_count}"]
     if namespace:
         args.extend(["-n", namespace])
     if container:
@@ -153,22 +227,103 @@ def kubectl_logs(
     return {"success": True, "data": result.stdout.strip(), "error": None}
 
 
-def kubectl_apply(
-    manifest: Annotated[str, "A valid Kubernetes YAML or JSON manifest string."],
-) -> KubeActionResponse:
+def kubectl_get_events(
+    namespace: Annotated[Optional[str], "Namespace or 'all'."] = None,
+    verbose: Annotated[
+        bool, "If False, returns only the 10 most recent events summarized."
+    ] = False,
+) -> KubeResult:
     """
-    Applies a configuration to a resource from a manifest string (equivalent to kubectl apply -f).
+    Retrieves cluster events to diagnose scheduling or lifecycle issues.
 
     Args:
-        manifest: The raw string content of the Kubernetes configuration.
+        namespace: Target namespace or 'all'.
+        verbose: Whether to show all fields and more events.
 
-    Returns:
-        The result of the apply operation, including success status and CLI output.
+    Guidance for LLM Agent:
+        - This is the first tool you should use if a pod is stuck in 'ImagePullBackOff', 'Pending', or 'CrashLoopBackOff'.
+        - verbose=False (default) provides a high-level summary of the most recent 10 events.
+    """
+    args = ["get", "events", "--sort-by=.lastTimestamp"]
+    if namespace == "all":
+        args.append("--all-namespaces")
+    elif namespace:
+        args.extend(["-n", namespace])
+
+    try:
+        result = run_kubectl(args, json_output=True)
+        data = json.loads(result.stdout)
+        items = data.get("items", [])
+
+        # Events are sorted by time; we usually only want the newest
+        if not verbose:
+            items = _summarize_resource_data(items[-10:], "event")
+
+        return {"success": True, "data": items, "error": None}
+    except Exception as e:
+        return {"success": False, "data": [], "error": str(e)}
+
+
+def kubectl_exec(
+    pod_name: Annotated[str, "Name of the pod."],
+    command: Annotated[List[str], "Command as list, e.g., ['ls', '-l']."],
+    namespace: Annotated[Optional[str], "Namespace scope."] = None,
+    container: Annotated[Optional[str], "Target container."] = None,
+    verbose: Annotated[bool, "If False, truncates output to 1000 characters."] = False,
+) -> KubeActionResponse:
+    """
+    Executes a command inside a running container.
+
+    Args:
+        pod_name: Target pod.
+        command: Command and arguments.
+        namespace: Target namespace.
+        container: Specific container.
+        verbose: Toggle for full output vs. truncated output.
+
+    Guidance for LLM Agent:
+        - Use this for deep inspection (e.g., 'cat' a config file, 'curl' a local endpoint).
+        - Be cautious: commands like 'top' or long-running processes will fail or hang.
+    """
+    args = ["exec", pod_name]
+    if namespace:
+        args.extend(["-n", namespace])
+    if container:
+        args.extend(["-c", container])
+    args.append("--")
+    args.extend(command)
+
+    result = run_kubectl(args)
+    output = result.stdout.strip() if result.returncode == 0 else result.stderr.strip()
+
+    if not verbose and len(output) > 1000:
+        output = output[:1000] + "\n... [Output Truncated. Use verbose=True for full output] ..."
+
+    return {
+        "success": result.returncode == 0,
+        "output": output,
+        "exit_code": result.returncode,
+    }
+
+
+def kubectl_apply(
+    manifest: Annotated[str, "A valid Kubernetes YAML or JSON string."],
+    verbose: Annotated[bool, "Whether to return the full detailed status of the apply."] = False,
+) -> KubeActionResponse:
+    """
+    Applies a configuration to a resource from a manifest string.
+
+    Args:
+        manifest: The YAML/JSON content to apply.
+        verbose: If True, provides extra output details if available.
+
+    Guidance for LLM Agent:
+        - Use this to create or update resources (Deployments, Services, etc.).
+        - Ensure the manifest is properly formatted YAML.
     """
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(manifest)
         temp_path = f.name
-
     try:
         result = run_kubectl(["apply", "-f", temp_path])
         return {
@@ -181,373 +336,28 @@ def kubectl_apply(
             os.remove(temp_path)
 
 
-def kubectl_apply_file(
-    path: Annotated[str, "A local or URL reference to a Kubernetes manifest to apply."],
-) -> KubeActionResponse:
-    """
-    Applies a local or remote file (manifest) to the cluster (equivalent to kubectl apply -f).
-
-    Args:
-        path: The local or URL path to apply.
-
-    Returns:
-        The result of the apply operation, including success status and CLI output.
-    """
-    try:
-        result = run_kubectl(["apply", "-f", path])
-        return {
-            "success": result.returncode == 0,
-            "output": result.stdout.strip() if result.returncode == 0 else result.stderr.strip(),
-            "exit_code": result.returncode,
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "output": f"Error applying manifest: {e}",
-            "exit_code": -1,
-        }
-
-
 def kubectl_delete(
-    resource_type: Annotated[str, "Type of resource (e.g., 'pod')."],
-    name: Annotated[str, "Name of the resource to delete."],
-    namespace: Annotated[Optional[str], "The namespace scope."] = None,
+    resource_type: Annotated[str, "Type of resource."],
+    name: Annotated[str, "Name of the resource."],
+    namespace: Annotated[Optional[str], "Namespace scope."] = None,
 ) -> KubeActionResponse:
     """
     Deletes a specific resource from the cluster.
 
     Args:
-        resource_type: Resource category.
-        name: Name of the instance.
+        resource_type: Category (pod, svc, etc.).
+        name: Instance name.
         namespace: Target namespace.
+
+    Guidance for LLM Agent:
+        - Use this to remove resources. Be careful deleting namespaces or critical system pods.
     """
     args = ["delete", resource_type, name]
     if namespace:
         args.extend(["-n", namespace])
-
     result = run_kubectl(args)
     return {
         "success": result.returncode == 0,
         "output": result.stdout.strip() if result.returncode == 0 else result.stderr.strip(),
         "exit_code": result.returncode,
     }
-
-
-def kubectl_crds() -> KubeActionResponse:
-    """
-    kubectl get crds
-    """
-    args = ["get", "crds", "-o", "json"]
-    result = run_kubectl(args)
-    return {
-        "success": result.returncode == 0,
-        "output": result.stdout.strip() if result.returncode == 0 else result.stderr.strip(),
-        "exit_code": result.returncode,
-    }
-
-
-def kubectl_get_events(
-    namespace: Annotated[
-        Optional[str], "Namespace to fetch events for. 'all' for all namespaces."
-    ] = None,
-) -> KubeResult:
-    """
-    Retrieves cluster events, sorted by time. Essential for diagnosing scheduling failures.
-
-    Args:
-        namespace: Target namespace or 'all'.
-
-    Returns:
-        A list of event objects containing reason, message, and source.
-    """
-    args = ["get", "events", "--sort-by=.lastTimestamp"]
-    if namespace == "all":
-        args.append("--all-namespaces")
-    elif namespace:
-        args.extend(["-n", namespace])
-
-    try:
-        result = run_kubectl(args, json_output=True)
-        data = json.loads(result.stdout)
-        return {"success": True, "data": data.get("items", []), "error": None}
-    except Exception as e:
-        return {"success": False, "data": [], "error": str(e)}
-
-
-def kubectl_label(
-    resource_type: Annotated[str, "Resource type (e.g., 'node')."],
-    name: Annotated[str, "Name of the resource."],
-    labels: Annotated[Dict[str, str], "A dictionary of labels to apply."],
-    namespace: Annotated[Optional[str], "Namespace scope."] = None,
-    overwrite: Annotated[bool, "Whether to overwrite existing labels."] = True,
-) -> KubeActionResponse:
-    """
-    Adds or updates labels on a Kubernetes resource.
-
-    Args:
-        resource_type: Category (pod, node, etc.).
-        name: Target name.
-        labels: Key-value pairs to set.
-        overwrite: If True, replaces existing keys.
-    """
-    label_strings = [f"{k}={v}" for k, v in labels.items()]
-    args = ["label", resource_type, name] + label_strings
-    if namespace:
-        args.extend(["-n", namespace])
-    if overwrite:
-        args.append("--overwrite")
-
-    result = run_kubectl(args)
-    return {
-        "success": result.returncode == 0,
-        "output": result.stdout.strip() if result.returncode == 0 else result.stderr.strip(),
-        "exit_code": result.returncode,
-    }
-
-
-def kubectl_exec(
-    pod_name: Annotated[str, "Name of the pod."],
-    command: Annotated[List[str], "Command and arguments to run (e.g., ['ls', '/'])."],
-    namespace: Annotated[Optional[str], "Namespace of the pod."] = None,
-    container: Annotated[Optional[str], "Target container name."] = None,
-) -> KubeActionResponse:
-    """
-    Executes a command inside a running container. Equivalent to 'kubectl exec'.
-
-    Args:
-        pod_name: Target pod.
-        command: List of command components.
-        namespace: Target namespace.
-        container: Specific container in the pod.
-
-    Returns:
-        The output of the command execution.
-    """
-    args = ["exec", pod_name]
-    if namespace:
-        args.extend(["-n", namespace])
-    if container:
-        args.extend(["-c", container])
-
-    args.append("--")
-    args.extend(command)
-
-    result = run_kubectl(args)
-    return {
-        "success": result.returncode == 0,
-        "output": result.stdout.strip() if result.returncode == 0 else result.stderr.strip(),
-        "exit_code": result.returncode,
-    }
-
-
-def kubectl_explain(
-    resource_path: Annotated[
-        str,
-        "The resource or field to explain (e.g., 'pod', 'deployment.spec.template.spec.containers').",
-    ],
-    recursive: Annotated[bool, "If True, shows documentation for all nested child fields."] = False,
-) -> KubeResult:
-    """
-    Provides detailed documentation and schema definitions for Kubernetes resources and fields.
-
-    Use this tool when you need to understand the structure of a specific resource,
-    discover which fields are available in a spec, or verify the data type required
-    for a manifest property.
-
-    Args:
-        resource_path: The dot-notation path to the resource or field of interest.
-        recursive: Whether to expand all sub-fields in the documentation output.
-
-    Returns:
-        A dictionary containing:
-            - 'success' (bool): True if the explanation was retrieved.
-            - 'data' (str): The documentation text provided by the Kubernetes API.
-            - 'error' (str, optional): Error message if the resource path is invalid.
-    """
-    args = ["explain", resource_path]
-    if recursive:
-        args.append("--recursive")
-
-    try:
-        # explain does not support -o json, so we treat it as raw text
-        result = run_kubectl(args)
-        if result.returncode != 0:
-            return {"success": False, "data": "", "error": result.stderr.strip()}
-
-        return {"success": True, "data": result.stdout.strip(), "error": None}
-    except Exception as e:
-        return {"success": False, "data": "", "error": str(e)}
-
-
-def kubectl_api_resources() -> KubeResult:
-    """
-    Lists the full set of resource types available on the server.
-
-    Use this to discover which resources (like 'pods', 'jobs', 'configmaps') the
-    cluster supports, their associated API groups, and their short names.
-
-    Returns:
-        A dictionary containing:
-            - 'success' (bool): True if the discovery succeeded.
-            - 'data' (str): A formatted table of available API resources.
-            - 'error' (str, optional): Error details if the query failed.
-    """
-    try:
-        # api-resources does not support -o json, so we return the formatted table
-        result = run_kubectl(["api-resources"])
-        if result.returncode != 0:
-            return {"success": False, "data": "", "error": result.stderr.strip()}
-
-        return {"success": True, "data": result.stdout.strip(), "error": None}
-    except Exception as e:
-        return {"success": False, "data": "", "error": str(e)}
-
-
-def kubectl_api_versions() -> KubeResult:
-    """
-    Lists the API versions supported by the cluster.
-
-    Use this to determine the correct 'apiVersion' string to use at the top
-    of a YAML manifest (e.g., 'apps/v1' vs 'batch/v1').
-
-    Returns:
-        A dictionary containing:
-            - 'success' (bool): True if the versions were retrieved.
-            - 'data' (list[str]): A list of supported API version strings.
-            - 'error' (str, optional): Error details.
-    """
-    try:
-        result = run_kubectl(["api-versions"])
-        if result.returncode != 0:
-            return {"success": False, "data": [], "error": result.stderr.strip()}
-
-        # Split output into a list of versions
-        versions = [v.strip() for v in result.stdout.splitlines() if v.strip()]
-        return {"success": True, "data": versions, "error": None}
-    except Exception as e:
-        return {"success": False, "data": [], "error": str(e)}
-
-
-def kubectl_get_autoscaler_info() -> AutoscalerConfigResult:
-    """
-    Attempts to identify the cluster autoscaler and retrieve its configuration.
-
-    This tool scans the cluster for common autoscalers (Karpenter, Cluster-Autoscaler,
-    or Cluster API) and extracts metadata about which node types are allowed
-    to be provisioned, even if those nodes aren't currently active.
-
-    Returns:
-        A dictionary containing:
-            - 'success' (bool): True if an autoscaler was identified and queried.
-            - 'autoscaler_type' (str): One of 'karpenter', 'cluster-autoscaler', or 'unknown'.
-            - 'potential_instances' (list): Known allowed instance types or node groups.
-            - 'raw_config' (dict): The underlying ConfigMap or CRD data.
-    """
-    # Karpenter defines potential nodes in NodePools
-    try:
-        res = run_kubectl(["get", "nodepools.karpenter.sh"], json_output=True)
-        if res.returncode == 0:
-            data = json.loads(res.stdout)
-            items = data.get("items", [])
-            instance_types = []
-            for item in items:
-                # Extract allowed requirements (like instance-type)
-                requirements = (
-                    item.get("spec", {}).get("template", {}).get("spec", {}).get("requirements", [])
-                )
-                for req in requirements:
-                    if (
-                        req.get("key") == "node.kubernetes.io/instance-type"
-                        or req.get("key") == "karpenter.k8s.aws/instance-type"
-                    ):
-                        instance_types.extend(req.get("values", []))
-
-            return {
-                "success": True,
-                "autoscaler_type": "karpenter",
-                "potential_instances": list(set(instance_types)),
-                "raw_config": items,
-            }
-    except Exception:
-        pass
-
-    # Standard CA writes its state to a ConfigMap called cluster-autoscaler-status
-    try:
-        res = run_kubectl(
-            ["get", "configmap", "cluster-autoscaler-status", "-n", "kube-system"], json_output=True
-        )
-        if res.returncode == 0:
-            data = json.loads(res.stdout)
-            status_text = data.get("data", {}).get("status", "")
-
-            # The status text is a custom format. We look for NodeGroups.
-            # Example: "NodeGroups: Name: group-1, Name: group-2"
-            node_groups = re.findall(r"Name:\s+([^\s,]+)", status_text)
-
-            return {
-                "success": True,
-                "autoscaler_type": "cluster-autoscaler",
-                "potential_instances": node_groups,
-                "raw_config": {"status": status_text},
-            }
-    except Exception:
-        pass
-
-    # Cluster API is common in hybrid/multi-cloud setups
-    try:
-        res = run_kubectl(["get", "machinesets"], namespace="all", json_output=True)
-        if res.returncode == 0:
-            data = json.loads(res.stdout)
-            items = data.get("items", [])
-            machine_types = [
-                item.get("spec", {})
-                .get("template", {})
-                .get("spec", {})
-                .get("providerSpec", {})
-                .get("value", {})
-                .get("instanceType")
-                for item in items
-            ]
-            return {
-                "success": True,
-                "autoscaler_type": "cluster-api",
-                "potential_instances": [m for m in machine_types if m],
-                "raw_config": items,
-            }
-    except Exception:
-        pass
-
-    return {
-        "success": False,
-        "autoscaler_type": "unknown",
-        "potential_instances": [],
-        "error": "No recognizable autoscaler configuration (Karpenter, CA, or CAPI) found.",
-    }
-
-
-def kubectl_get_resource_quota(
-    namespace: Annotated[str, "The namespace to check quotas for."],
-) -> KubeResult:
-    """
-    Retrieves the ResourceQuotas for a namespace.
-
-    Quotas define the 'hard' limits for a namespace. Even if the cluster can
-    scale, the namespace might be restricted from using more than X cores or Y GPUs.
-
-    Args:
-        namespace: The target namespace.
-
-    Returns:
-        List of ResourceQuota objects showing used vs hard limits.
-    """
-    return kubectl_get("resourcequotas", namespace=namespace)
-
-
-def kubectl_get_priority_classes() -> KubeResult:
-    """
-    Lists PriorityClasses in the cluster.
-
-    Priority determines which pods get scheduled first or can preempt others
-    during an upscale event. Higher priority pods trigger the autoscaler faster.
-    """
-    return kubectl_get("priorityclasses")
