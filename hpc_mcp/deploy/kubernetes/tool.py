@@ -102,7 +102,7 @@ def kubectl_get(
     verbose: Annotated[
         bool, "If True, returns the full raw JSON. If False, returns a summarized version."
     ] = False,
-) -> KubeResult:
+):
     """
     Retrieves information about Kubernetes resources.
 
@@ -153,7 +153,7 @@ def kubectl_describe(
     verbose: Annotated[
         bool, "If False, returns only the first 50 lines (usually enough for errors)."
     ] = False,
-) -> KubeResult:
+):
     """
     Provides a human-readable, detailed description of a resource.
 
@@ -196,7 +196,7 @@ def kubectl_logs(
     verbose: Annotated[
         bool, "If True, ignores the 'tail' limit and returns more context (max 1000 lines)."
     ] = False,
-) -> KubeResult:
+):
     """
     Fetches the logs for a specific pod or container.
 
@@ -232,7 +232,7 @@ def kubectl_get_events(
     verbose: Annotated[
         bool, "If False, returns only the 10 most recent events summarized."
     ] = False,
-) -> KubeResult:
+):
     """
     Retrieves cluster events to diagnose scheduling or lifecycle issues.
 

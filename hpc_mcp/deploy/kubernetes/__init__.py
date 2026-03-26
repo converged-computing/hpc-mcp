@@ -1,3 +1,4 @@
+from .events import KubernetesEvents
 from .tool import (
     kubectl_api_resources,
     kubectl_api_versions,

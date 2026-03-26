@@ -22,6 +22,10 @@ INSTALL_REQUIRES = (
 )
 
 DATABASE_REQUIRES = (("sqlalchemy", {"min_version": None}),)
+KUBERNETES_REQUIRES = (
+    ("kubernetes-asyncio", {"min_version": None}),
+    ("kubernetes", {"min_version": None}),
+)
 
 TESTS_REQUIRES = (
     ("pytest", {"min_version": "4.6.2"}),

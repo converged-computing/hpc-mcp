@@ -63,6 +63,7 @@ if __name__ == "__main__":
     TESTS_REQUIRES = get_reqs(lookup, "TESTS_REQUIRES")
     INSTALL_REQUIRES_ALL = get_reqs(lookup, "INSTALL_REQUIRES_ALL")
     INSTALL_REQUIRES_DATABASE = get_reqs(lookup, "DATABASE_REQUIRES")
+    KUBERNETES_REQUIRES = get_reqs(lookup, "KUBERNETES_REQUIRES")
 
     setup(
         name=NAME,
@@ -85,6 +86,7 @@ if __name__ == "__main__":
         extras_require={
             "all": [INSTALL_REQUIRES_ALL],
             "database": [INSTALL_REQUIRES_DATABASE],
+            "kubernetes": [KUBERNETES_REQUIRES],
         },
         classifiers=[
             "Intended Audience :: Science/Research",
