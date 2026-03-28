@@ -69,6 +69,8 @@ class KubernetesEvents:
         resource_type = params.get("resource_type", "pod").lower()
         namespace = params.get("namespace", "default")
         is_custom = params.get("is_custom_resource", False)
+        only_completed = params.get("only_completed", True)
+        name_pattern = params.get("name_pattern")
         label_selector = params.get("label_selector", "")
         field_selector = params.get("field_selector", "")
         w = watch.Watch()
@@ -107,14 +109,27 @@ class KubernetesEvents:
                 sanitizer = ApiClient()
                 async for event in stream:
                     obj = sanitizer.sanitize_for_serialization(event["object"])
+
+                    # Filter based on name
+                    metadata = obj.get("metadata", {})
+                    name = metadata.get("name", "")
+                    if name_pattern and name_pattern not in name:
+                        continue
+
                     event_data = {
                         "type": event["type"],
-                        "name": obj["metadata"].get("name"),
+                        "name": name,
                         "resource": resource_type,
                         "creation_timestamp": obj["metadata"].get("creationTimestamp"),
                     }
 
                     status_block = obj.get("status", {})
+                    state = "Unknown"
+                    is_completed = False
+
+                    if resource_type == "pod":
+                        state = status_block.get("phase", "Unknown")
+                        is_completed = state in ["Succeeded", "Failed"]
 
                     if resource_type == "pod":
                         event_data["status"] = status_block.get("phase", "Unknown")
@@ -129,15 +144,21 @@ class KubernetesEvents:
                         completions = obj.get("spec", {}).get("completions", 1)
                         if event_data["status"]["succeeded"] >= completions:
                             event_data["state"] = "Succeeded"
+                            is_completed = True
                         elif event_data["status"]["failed"] > 0:
                             event_data["state"] = "Failed"
+                            is_completed = True
                         else:
                             event_data["state"] = "Running"
                     else:
                         event_data["status"] = status_block
+                        state = status_block.get("state", "Unknown")
+                        is_completed = state in ["Succeeded", "Failed", "Completed", "Finished"]
 
                     if is_custom and "state" in status_block:
                         event_data["state"] = status_block["state"]
+                    if only_completed and not is_completed:
+                        continue
 
                     try:
                         safe_event_data = json.loads(json.dumps(event_data, default=str))

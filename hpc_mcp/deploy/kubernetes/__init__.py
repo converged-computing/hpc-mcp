@@ -15,7 +15,6 @@ from .tool import (
     kubectl_get_events,
     kubectl_get_priority_classes,
     kubectl_get_resource_quota,
-    kubectl_get_summarized,
     kubectl_label,
     kubectl_logs,
     kubectl_patch,

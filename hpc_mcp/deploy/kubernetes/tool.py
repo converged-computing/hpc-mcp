@@ -522,37 +522,6 @@ def kubectl_delete(
     }
 
 
-def kubectl_get_summarized(
-    resource_type: Annotated[str, "The type of resource (e.g., 'pods', 'nodes', 'deployments')."],
-    name: Annotated[Optional[str], "Specific name of the resource instance."] = None,
-    namespace: Annotated[Optional[str], "Namespace scope. Use 'all' for all namespaces."] = None,
-    label_selector: Annotated[Optional[str], "Filter by labels (e.g., 'app=nginx')."] = None,
-    verbose: Annotated[
-        bool, "If True, returns full raw JSON. If False, returns token-efficient summary."
-    ] = False,
-) -> KubeResult:
-    """
-    Retrieves Kubernetes resources with an optional summarized view to save tokens.
-
-    Args:
-        resource_type: The Kubernetes resource category.
-        name: Optional name of a specific resource.
-        namespace: The namespace to query. Defaults to current context.
-        label_selector: Kubernetes label query string.
-        verbose: Toggle between a token-efficient summary and full resource data.
-
-    Guidance for LLM Agent:
-        - ALWAYS start with verbose=False. This provides the 'vital signs' of a resource.
-        - Only switch to verbose=True if you need to see deep spec details, like environment variables
-          or exact affinity rules not present in the summary.
-    """
-    res = kubectl_get(resource_type, name, namespace, label_selector)
-    if res["success"] and not verbose:
-        items = res["data"] if isinstance(res["data"], list) else [res["data"]]
-        res["data"] = _summarize_resource_data(items, resource_type)
-    return res
-
-
 def kubectl_top_nodes(
     verbose: Annotated[bool, "If True, shows specific percentages and raw values."] = False,
 ) -> KubeResult:
