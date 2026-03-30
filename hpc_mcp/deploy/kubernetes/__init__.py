@@ -20,5 +20,6 @@ from .tool import (
     kubectl_patch,
     kubectl_rollout_status,
     kubectl_top_nodes,
+    kubectl_unique_logs,
     kubectl_wait,
 )

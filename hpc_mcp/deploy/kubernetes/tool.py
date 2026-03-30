@@ -267,6 +267,37 @@ def kubectl_label(
     }
 
 
+def kubectl_unique_logs(
+    pod_name: Annotated[str, "The name of the pod to fetch logs from."],
+    namespace: Annotated[Optional[str], "Namespace of the pod."] = None,
+    container: Annotated[
+        Optional[str], "Specific container name for pods with multiple containers."
+    ] = None,
+) -> Annotated[
+    KubeResourceResponse, "Dictionary containing success status and the log string data."
+]:
+    """
+    Fetches the logs for a specific pod or container, but only unique lines to reduce size.
+
+    Args:
+        pod_name: Target pod name.
+        namespace: Namespace scope.
+        container: Specific container.
+        tail: Number of lines to fetch.
+
+    Guidance for LLM Agent:
+        - Use this to diagnose application-level crashes or errors.
+        - Remember that lines may appear again, but have been filtered.
+        - Frequency of lines are not meaningful
+    """
+    logs = kubectl_logs(pod_name, namespace, container)
+    lines = (logs.get("data") or "").split("\n")
+    ordered_set_keys = dict.fromkeys(lines)
+    # Get the elements as an iterable of keys
+    logs["data"] = "\n".join(list(ordered_set_keys.keys()))
+    return logs
+
+
 def kubectl_logs(
     pod_name: Annotated[str, "The name of the pod to fetch logs from."],
     namespace: Annotated[Optional[str], "Namespace of the pod."] = None,
