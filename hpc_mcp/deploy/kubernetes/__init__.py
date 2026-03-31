@@ -1,3 +1,4 @@
+from .events import KubernetesEvents
 from .tool import (
     kubectl_api_resources,
     kubectl_api_versions,
@@ -10,9 +11,15 @@ from .tool import (
     kubectl_explain,
     kubectl_get,
     kubectl_get_autoscaler_info,
+    kubectl_get_current_context,
     kubectl_get_events,
     kubectl_get_priority_classes,
     kubectl_get_resource_quota,
     kubectl_label,
     kubectl_logs,
+    kubectl_patch,
+    kubectl_rollout_status,
+    kubectl_top_nodes,
+    kubectl_unique_logs,
+    kubectl_wait,
 )
