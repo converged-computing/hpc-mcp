@@ -3,6 +3,7 @@
 > 🌀 Agentic MCP tools for High Performance Computing
 
 [![PyPI version](https://badge.fury.io/py/hpc-mcp.svg)](https://badge.fury.io/py/hpc-mcp)
+[![DOI](https://zenodo.org/badge/1122460684.svg)](https://doi.org/10.5281/zenodo.19654907)
 
 ![img/hpc-mcp.png](https://github.com/converged-computing/hpc-mpc/blob/main/img/hpc-mcp-small.png?raw=true)
 
