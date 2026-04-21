@@ -16,6 +16,17 @@
 
 This is a library of MCP tools (functions, prompts, and resources) intended for converged computing and HPC use cases. A demo server is provided here, and largely functions are expected to be used a-la-carte as imports to other libraries. We welcome contributions of all functions types that are related to HPC, converged computing, and science. These MCP tools can be used via a standalone server, or combined with other tools.
 
+### Environment
+
+Control of tools (access, limits, etc.) is done by way of the environment.
+
+| Name | Description | Default |
+|------|-------------|---------|
+| `HPCMCP_FILESYSTEM_SANDBOX` | enable (require) a sandbox | False |
+| `HPCMCP_FILESYSTEM_DATA_ROOT` | if sandbox enabled, read-only data root | unset |
+| `HPCMCP_FILESYSTEM_RESULT_ROOT` | if sandbox enabled, read and write result root for agent to write | unset |
+| `HPCMCP_FILESYSTEM_TOKEN_LIMIT` | Hard limit of tokens to allow in response | unset |
+
 ### Server
 
 We provide examples for fastmcp and a vanilla mcp (stdio) setup. Neither requirements are added to the install directly, so it's up to the user (you) to install. Tests are performed with fastmcp (TBA)
