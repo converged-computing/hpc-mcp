@@ -4,6 +4,7 @@ from .tool import (
     filesystem_find,
     filesystem_find_directory,
     filesystem_find_file,
+    filesystem_get_json_schema_paths,
     filesystem_get_json_structure,
     filesystem_get_system_capabilities,
     filesystem_grep,
