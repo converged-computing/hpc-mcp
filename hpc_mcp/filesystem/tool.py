@@ -13,6 +13,11 @@ DATA_ROOT = os.environ.get("HPCMCP_FILESYSTEM_DATA_ROOT")
 RESULT_ROOT = os.environ.get("HPCMCP_FILESYSTEM_RESULT_ROOT")
 LIMIT = utils.envar_get_integer("HPCMCP_FILESYSTEM_TOKEN_LIMIT")
 
+print(f"    SANDBOX ENABLED: {SANDBOX_ENABLED}")
+print(f"        RESULT ROOT: {RESULT_ROOT}")
+print(f"          DATA ROOT: {DATA_ROOT}")
+print(f"              LIMIT: {LIMIT}")
+
 ToolResult = Annotated[
     Dict[str, Any],
     "A standardized response containing 'success' (bool) and either data or 'error'.",
@@ -352,7 +357,7 @@ def filesystem_grep(
     pattern: Annotated[str, "The regex pattern to search for (Extended Regex format)."],
     case_insensitive: Annotated[bool, "Toggle case-insensitive matching."] = True,
     context_lines: Annotated[int, "Number of lines of context to include around matches."] = 2,
-    limit: Annotated[int, "The maximum number of matches to return."] = 50,
+    limit: Annotated[int, "The maximum number of tokens (length) to return."] = 2000,
 ) -> NativeQueryResult:
     """
     Performs a high-performance text search using the system 'grep' utility.
@@ -391,8 +396,9 @@ def filesystem_grep(
 
     # Final safety truncation for token protection
     output = result.stdout
-    if len(output) > 15000:
-        output = output[:15000] + "\n... [Output truncated for size]"
+    limit = min(limit, LIMIT) if LIMIT is not None else limit
+    if len(output) > limit:
+        output = output[:limit] + "\n... [Output truncated for size]"
 
     return {"success": True, "output": output, "tool_used": "grep"}
 
@@ -436,7 +442,60 @@ def filesystem_query_jq(
     if len(output) > 15000:
         output = output[:15000] + "\n... [Output truncated for size]"
 
+    try:
+        output = json.loads(output)
+    except:
+        pass
     return {"success": True, "output": output, "tool_used": "jq"}
+
+
+
+@filesystem_tool(mode="read")
+def filesystem_get_json_schema_paths(
+    path: Annotated[str, "The path to the JSON file to analyze."]
+) -> ToolResult:
+    """
+    Returns a unique list of all data paths within a JSON file in dot-notation.
+    
+    This tool collapses array indices (e.g., [0], [1]) into '[]' to show 
+    the schema structure. Use this to identify the exact path needed for 
+    high-performance jq queries.
+    """
+    if not _has_tool("jq"):
+        return {"success": False, "error": "System tool 'jq' is required."}
+
+    # Stream all paths using jq. This is memory efficient for large files.
+    cmd = ["jq", "-c", "tostream | select(length > 1) | .[0]", path]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+
+    if res.returncode != 0:
+        return {"success": False, "error": res.stderr}
+
+    unique_paths = set()
+    for line in res.stdout.splitlines():
+        try:
+            path_list = json.loads(line)
+            parts = []
+            for part in path_list:
+                if isinstance(part, int):
+                    # Attach [] to the previous key, or add [] if it's the root
+                    if parts:
+                        if not parts[-1].endswith("[]"):
+                            parts[-1] += "[]"
+                    else:
+                        parts.append("[]")
+                else:
+                    parts.append(str(part))
+            unique_paths.add(".".join(parts))
+        except:
+            continue
+
+    # Return sorted list for consistent agent context
+    return {
+        "success": True, 
+        "paths": sorted(list(unique_paths)),
+        "message": f"Found {len(unique_paths)} unique schema paths."
+    }
 
 
 @filesystem_tool(mode="read")
@@ -545,6 +604,12 @@ def filesystem_batch_extract_to_file(
                 successful_results[f_str] = res.stdout.strip()
         else:
             errors.append({"file": f_str, "error": res.stderr.strip()})
+
+    # Try loading as json
+    try:
+        successful_results = json.loads(successful_results)
+    except:
+        pass
 
     # Test returns the content
     if is_test:
@@ -733,6 +798,8 @@ def filesystem_find_file(
             - 'matches' (list[str]): A list of absolute paths to found files.
             - 'error' (str, optional): Error message if root is invalid or search failed.
     """
+    limit = min(limit, LIMIT) if LIMIT is not None else limit
+
     # Security: Ensure name is just a filename, not a path
     if os.path.basename(name) != name:
         return {"success": False, "error": "The 'name' argument must be a filename, not a path."}
@@ -783,6 +850,8 @@ def filesystem_find_directory(
             - 'matches' (list[str]): A list of absolute paths to found directories.
             - 'error' (str, optional): Error message if root is invalid or search failed.
     """
+    limit = min(limit, LIMIT) if LIMIT is not None else limit
+
     # Security: Ensure name is just a name, not a path
     if os.path.basename(name) != name:
         return {"success": False, "error": "The 'name' argument must be a name, not a path."}
